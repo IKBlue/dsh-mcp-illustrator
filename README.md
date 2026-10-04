@@ -118,12 +118,58 @@ the dependency tree into the profile.
 
 ## Upgrading the server
 
-Bump the range in `package.json` and reinstall — the server itself is never
-vendored into this repo:
+The dependency is **pinned** (`"illustrator-mcp-server": "1.10.3"`), so an
+install never silently changes server behaviour — these tools drive an external
+application over COM, and a minor bump there is a behavioural change, not just a
+bug fix.
+
+To upgrade: edit the version, bump this package's `version`, reinstall.
 
 ```json
-"dependencies": { "illustrator-mcp-server": "^1.11.0" }
+"dependencies": { "illustrator-mcp-server": "1.11.0" }
 ```
+
+## Surviving a DSH upgrade
+
+This bundle declares **no `@deepseek-ai/dsh*` peer dependency**, deliberately.
+DSH compares a plugin's declared DSH peers against the runtime version and skips
+incompatible bundles; the shipped rule (translated from the Chinese reference)
+is:
+
+> when no DSH peer is declared, no version constraint is applied
+
+So a DSH upgrade will never refuse to load this bundle on version grounds. The
+other half of that sentence is the catch: **nothing protects it either.**
+
+The peer route is not a free upgrade, incidentally. Exact-version exemptions
+live in the profile's `compatibility.json`, and the docs state that *neither
+plugin upgrades nor DSH upgrades inherit an exemption* — so a declared peer
+would mean re-granting one on every DSH release. Declaring none avoids that
+treadmill.
+
+The trade-off is a **missing compatibility gate**: three seams are load-bearing,
+and a change to any of them fails the row at activation rather than at load.
+
+| Seam | Used for | Evidence it is intended, not incidental |
+|---|---|---|
+| `ctx.get('profileContext').dir` | resolving the server entry | `dsh-app-boot`: "`ctx.profileContext` contains only profile locations…" |
+| `@deepseek-ai/dsh-mcp-client` row schema | the entire row | the shipped `cordis-plugin-development` skill's `templates/mcp/` |
+| `process.execPath` + `ELECTRON_RUN_AS_NODE=1` | a Node interpreter | `dsh-desktop-host` launches pnpm exactly this way; `dsh-ptc-runtime-node` documents keeping the variable for child startup on purpose |
+
+What to expect after an upgrade, and what each symptom means:
+
+- **Tools gone, row reads `fiberPhase: failed`** → one of the three seams moved.
+  Re-run `install_bundle`; if that does not fix it, re-read the current
+  `@deepseek-ai/dsh-mcp-client` config schema and the `profileContext` reference.
+- **The bundle missing from the plugin list entirely** → a structural failure.
+  DSH skips such bundles and reports them in `skippedBundles`, once per launch.
+
+This is why keeping the plugin-manager tool enabled is worth it:
+`plugin_manager list_plugins` is the only place a failed row is visible.
+Otherwise the first symptom is 66 missing tools and no explanation.
+
+`dsh --dump-config` cannot help — it refuses for the desktop profile ("managed
+exclusively by the Electron application").
 
 ## Prerequisites
 
