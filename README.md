@@ -7,25 +7,35 @@ Two files, no build step, no Host/Client entry code.
 
 ## Install
 
-The plugin manager does the package install and the bundle selection — do not
+Requires the plugin-manager tool. It ships disabled in `dsh-base`
+(`tool-plugin-manager`, `disabled: true`); enable it in the profile patch, or
+use a preset that carries it:
+
+```yaml
+- id: tool-plugin-manager
+  disabled: false
+```
+
+Then let the manager do the package install and the bundle selection — do not
 reproduce those steps by hand:
 
 ```
-plugin_manager({ action: "install_bundle", target: "<git-or-path-spec>" })
+plugin_manager({ action: "install_bundle", target: "https://github.com/IKBlue/dsh-mcp-illustrator.git" })
 ```
 
 or, from a shell:
 
 ```
-dsh plugin --profile <profile> add <git-or-path-spec>
+dsh plugin --profile <profile> add https://github.com/IKBlue/dsh-mcp-illustrator.git
 ```
 
-Spec forms accepted: an npm name, an **absolute directory**, a git URL, or a
-tarball. For a git URL use `#main`:
+Spec forms accepted: an npm name, an absolute directory, a git URL, or a
+tarball. **Prefer git / npm / tarball** — a local directory is linked rather
+than installed, so the dependency never arrives (see below).
 
-```
-https://github.com/IKBlue/dsh-mcp-illustrator.git
-```
+A live profile applies the install immediately (`"application": "applied"`);
+`dsh plugin add` from a shell does not notify the manager service, so a shell
+install waits for the next restart.
 
 Then verify with the newly available tools — `mcp__illustrator__get_document_info`,
 `mcp__illustrator__list_fonts`, and 64 others.
@@ -43,13 +53,41 @@ Everything machine-specific is resolved at activation time:
 | Field | Value | Why it travels |
 |---|---|---|
 | `command` | `!!js process.execPath` | The Harness executable run with `ELECTRON_RUN_AS_NODE=1` **is** a Node interpreter. Verified: reports `node v24.18.1` and runs this server. No "Node must be on PATH" prerequisite. |
-| `args[0]` | `!!js process.env.DSH_PROFILE_DIR + '/node_modules/illustrator-mcp-server/dist/index.js'` | The server is a declared dependency, so the installing profile has it under its own `node_modules`. |
+| `args[0]` | `!!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server/dist/index.js'` | `ctx.profileContext` is the app-boot service carrying the profile's locations; `.dir` is its profile directory. The server is a declared dependency, so the installing profile has it under its own `node_modules`. |
 | `cwd` | same directory | The server writes per-call scratch files there. |
+
+### Do not use `process.env.DSH_PROFILE_DIR` here
+
+It is the obvious-looking choice and it is wrong. `DSH_PROFILE` /
+`DSH_PROFILE_DIR` are injected into **shell calls** by
+`@deepseek-ai/dsh-shell-env`; they are not part of the host process
+environment. Reading one gives `undefined`, and because `undefined + '…'` is a
+valid string the expression still evaluates — so nothing reports a config
+error. The bundle loads, the row mounts, and it fails only at spawn:
+
+```
+{"entryId":"include:mcp-illustrator","enabled":true,"fiberPhase":"failed"}
+```
+
+`fiberPhase: failed` on an otherwise healthy-looking row is that signature.
+Use `plugin_manager list_plugins` to see it — it is the only place the failure
+is visible, since the desktop profile writes no host log, `dsh --dump-config`
+refuses ("managed exclusively by the Electron application"), and a failed row
+simply contributes no tools.
 
 **Assumption:** the profile's pnpm `nodeLinker` is `hoisted`, so the dependency
 lands at `<profile>/node_modules/illustrator-mcp-server`. If a profile ever
 nests it, the path becomes
 `<profile>/node_modules/dsh-mcp-illustrator/node_modules/illustrator-mcp-server/dist/index.js`.
+
+## Installing from a local directory does not work
+
+`install_bundle` (and `dsh plugin add`) with an **absolute directory** records
+the dependency as `link:`, and pnpm then only symlinks it — **it does not
+install that package's dependencies**, so `illustrator-mcp-server` never
+arrives and the server path does not exist. Install from a git URL, an npm
+name, or a tarball (`pnpm pack`) instead; all three are real installs and pull
+the dependency tree into the profile.
 
 ## Upgrading the server
 
