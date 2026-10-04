@@ -5,6 +5,33 @@ A DSH **bundle** that connects [`illustrator-mcp-server`](https://github.com/ie3
 
 Two files, no build step, no Host/Client entry code.
 
+## Why this exists
+
+Wiring an MCP server into DSH by hand means pasting a config row full of
+absolute paths into a profile file. That works on exactly one machine:
+
+- the paths point at wherever the server happened to be cloned or unpacked
+- upgrading the server is a manual `npm install` in that directory
+- it never appears in the plugin manager, so install and uninstall leave no
+  trace and nothing can report *why* it failed
+- a second machine cannot reproduce it — which defeats the point of keeping a
+  configuration at all
+
+The goal here is to move that from a hand-edited config to a **package**, so a
+machine that has never seen this repository gets a working server with one
+command and no path written down anywhere:
+
+```
+plugin_manager install_bundle → https://github.com/IKBlue/dsh-mcp-illustrator.git
+```
+
+- the server resolves from the profile that installed the bundle, not a fixed path
+- the Node interpreter is the Harness's own executable, so nothing must be on PATH
+- upgrading is one version range; uninstalling is one command with no residue
+- the plugin manager can list it, toggle it, and report why it failed
+
+That goal is why the two details below are load-bearing rather than stylistic.
+
 ## Install
 
 Requires the plugin-manager tool. It ships disabled in `dsh-base`
@@ -122,3 +149,23 @@ per profile.
 package.json       manifest; dsh.bundle.patch is what makes this installable
 cordis.patch.yml   the Loader patch: inserts one @deepseek-ai/dsh-mcp-client row
 ```
+
+## Credits
+
+**The Illustrator work is not in this repository.** It is
+[**ie3jp/illustrator-mcp-server**](https://github.com/ie3jp/illustrator-mcp-server)
+by **ie3jp** — a 66-tool MCP server that drives Adobe Illustrator over
+PowerShell COM / ExtendScript, MIT licensed, published on npm as
+`illustrator-mcp-server`. This bundle installs it as a dependency and adds
+nothing to it. It is the thing to star, to thank, and to file Illustrator bugs
+against.
+
+If this bundle saves you the config work, the credit belongs upstream: every
+interesting problem here — Illustrator's object model, the version differences,
+the COM bridge, keeping the artwork intact across an export — is solved there.
+
+Also worth naming: the DSH-side blueprint is the Harness's own shipped skill
+`cordis-plugin-development`, specifically `references/mcp-bundle.md` and
+`templates/mcp/`. This bundle is that template plus a dependency and a resolved
+path; building it from the shipped template is what the docs intend.
+
