@@ -1,0 +1,46 @@
+# dsh-mcp-illustrator — bundle layer
+#
+# Mounted by the plugin manager (`install_bundle`), or by
+# `dsh plugin --profile <profile> add <spec>`, so a profile gets this row
+# without anyone hand-editing the profile's own cordis.patch.yml.
+#
+# There is deliberately NO absolute path anywhere in this file. Two things make
+# that work, and both matter on a machine that has never seen this repo:
+#
+#   command: !!js process.execPath
+#     The Harness executable, run with ELECTRON_RUN_AS_NODE=1, *is* a Node
+#     interpreter. Verified: it reports node v24.18.1 and runs this server.
+#     So no "install Node on PATH" prerequisite, and no hard-coded node.exe.
+#
+#   args / cwd: !!js ctx.get('profileContext').dir + ...
+#     `ctx.profileContext` is the app-boot service carrying the profile's
+#     locations; `.dir` is its profile directory. The server is a declared
+#     dependency, so the profile that installed this bundle has it at
+#     <profile>/node_modules/illustrator-mcp-server (pnpm nodeLinker: hoisted).
+#
+#     Do NOT reach for process.env.DSH_PROFILE_DIR here. That variable is
+#     injected into *shell calls* by @deepseek-ai/dsh-shell-env; it is not in the
+#     host process environment. Reading it gives undefined, the expression still
+#     evaluates (undefined + '…' is a valid string), and the row then fails only
+#     at spawn with ENOENT — the bundle loads and the row mounts, but reports
+#     fiberPhase: failed. That is exactly how this file was wrong once.
+#
+# !!js scalars inside `config` are Loader expressions evaluated against the row
+# plugin's context, with global fallthrough (which is where `process` comes from).
+
+- insert:
+    - id: mcp-illustrator
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: illustrator
+        transport: stdio
+        command: !!js process.execPath
+        args:
+          - !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server/dist/index.js'
+        cwd: !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server'
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+          ILLUSTRATOR_MCP_TIMEOUT_NORMAL: '60000'
+          ILLUSTRATOR_MCP_TIMEOUT_HEAVY: '180000'
+        failOnStartupError: true
+        toolCallTimeoutMs: 300000

@@ -1,0 +1,15 @@
+{
+  "name": "dsh-mcp-illustrator",
+  "version": "0.1.1",
+  "private": true,
+  "description": "DSH bundle: connects the illustrator-mcp-server MCP server (Adobe Illustrator) to the current Harness profile.",
+  "type": "module",
+  "dependencies": {
+    "illustrator-mcp-server": "^1.10.3"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
