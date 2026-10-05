@@ -40,7 +40,19 @@
         cwd: !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server'
         env:
           ELECTRON_RUN_AS_NODE: '1'
-          ILLUSTRATOR_MCP_TIMEOUT_NORMAL: '60000'
-          ILLUSTRATOR_MCP_TIMEOUT_HEAVY: '180000'
+          # The server reads both of these ONCE, at server start (they are module-level
+          # constants in dist/executor/jsx-runner.js), so a new value needs this row to be
+          # remounted. Falling back to the host process environment makes them settable
+          # without editing this file — see "Timeouts are the host environment's to set"
+          # in README.md.
+          #
+          # 60000 is measured insufficient, not guessed at: when the server has to cold-start
+          # Illustrator, a NORMAL call (list_fonts) hit the 60s deadline while Illustrator 29
+          # was still coming up. The cold-start duration itself was not measured, so 180000 is
+          # margin, not a measurement.
+          ILLUSTRATOR_MCP_TIMEOUT_NORMAL: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_NORMAL || 180000) + ''
+          # Kept below toolCallTimeoutMs (300000) on purpose: the inner timeout carries the
+          # actionable error, the outer one is generic.
+          ILLUSTRATOR_MCP_TIMEOUT_HEAVY: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_HEAVY || 180000) + ''
         failOnStartupError: true
         toolCallTimeoutMs: 300000

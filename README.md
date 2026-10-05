@@ -107,6 +107,42 @@ lands at `<profile>/node_modules/illustrator-mcp-server`. If a profile ever
 nests it, the path becomes
 `<profile>/node_modules/dsh-mcp-illustrator/node_modules/illustrator-mcp-server/dist/index.js`.
 
+### Timeouts are the host environment's to set
+
+The server takes two timeouts from its own environment, and **reads them once, at
+server start** — both are module-level constants in
+`dist/executor/jsx-runner.js`. A new value therefore needs this row to be
+remounted, i.e. the server process respawned.
+
+| Variable | Covers | Server default | This bundle |
+|---|---|---|---|
+| `ILLUSTRATOR_MCP_TIMEOUT_NORMAL` | every call that does not opt into heavy | 30000 | **180000** |
+| `ILLUSTRATOR_MCP_TIMEOUT_HEAVY` | `export`, `export_pdf`, `preflight_check`, plus whatever `tool-executor` routes there | 60000 | 180000 |
+
+Both are declared here as `!!js` expressions that fall back to the **host process
+environment**, so they can be changed without editing this file:
+
+```powershell
+setx ILLUSTRATOR_MCP_TIMEOUT_NORMAL 240000   # applies to the next Harness launch
+```
+
+Two properties of the server worth knowing before tuning:
+
+- It accepts only a positive decimal integer (`/^\d+$/`). **Anything else silently
+  falls back to the server default of 30000 — lower than this bundle's value.** A
+  malformed value makes things worse, not better.
+- `HEAVY` is deliberately kept below the row's `toolCallTimeoutMs` (300000): when
+  the inner timeout wins you get the server's actionable "script execution timed
+  out" message, which names the variables; when the outer one wins you get a
+  generic tool-call timeout.
+
+**Cold start is the case that motivated 180000.** The server launches Illustrator
+itself when it is not running. Measured here: with Illustrator not running, a
+NORMAL call (`list_fonts`) hit the 60s deadline while Illustrator 29 was still
+coming up — the window appeared shortly afterwards. 180000 is margin, not a
+measurement of that cold start. If you keep Illustrator running, this never
+arises.
+
 ## Installing from a local directory does not work
 
 `install_bundle` (and `dsh plugin add`) with an **absolute directory** records
@@ -176,6 +212,12 @@ exclusively by the Electron application").
 - Adobe Illustrator installed on the machine running the Harness.
   Tested against Illustrator 2022 (v26); the server warns that v28+ is the
   verified baseline but works on older versions.
+- **Illustrator is launched by the server when it is not already running.** The
+  first call after a cold start can therefore hit the inner timeout while
+  Illustrator is still starting up — measured: a NORMAL call timed out at 60000ms
+  with Illustrator 29. Start Illustrator first, or raise
+  `ILLUSTRATOR_MCP_TIMEOUT_NORMAL` (see "Timeouts are the host environment's to
+  set" above).
 - Network access to an npm registry on the machine that installs the bundle
   (the server is fetched as a dependency).
 
