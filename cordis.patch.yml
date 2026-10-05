@@ -56,3 +56,20 @@
           ILLUSTRATOR_MCP_TIMEOUT_HEAVY: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_HEAVY || 180000) + ''
         failOnStartupError: true
         toolCallTimeoutMs: 300000
+
+    # EXPERIMENT (0.1.4) — host-only self-row, no browser half.
+    #
+    # Question: can a row whose module lives in the *profile's* node_modules be imported by
+    # the Loader?  The 0.2.0 attempt added a row for this package together with a
+    # `dsh.client` browser half and got:
+    #
+    #     include:mcp-illustrator-config (dsh-mcp-illustrator): failed to import
+    #
+    # while every row that does activate here names an application-internal
+    # `@deepseek-ai/*` package.  This row removes the browser half as a variable: if it
+    # activates, profile-local rows work and that failure belonged to the browser half; if
+    # it fails the same way, a third-party bundle cannot declare a host row of its own.
+    #
+    # Remove this row once the question is answered — it serves no other purpose.
+    - id: mcp-illustrator-timeouts
+      name: 'dsh-mcp-illustrator'
