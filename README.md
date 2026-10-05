@@ -1,9 +1,10 @@
 # dsh-mcp-illustrator
 
 A DSH **bundle** that connects [`illustrator-mcp-server`](https://github.com/ie3jp/illustrator-mcp-server)
-(Adobe Illustrator, 66 MCP tools) to the Harness profile you install it into.
+(Adobe Illustrator, 66 MCP tools) to the Harness profile you install it into, and puts that
+row's cold-start timeouts on the Plugins page.
 
-Two files, no build step, no Host/Client entry code.
+One package, one install, no build step.
 
 ## Why this exists
 
@@ -234,9 +235,49 @@ per profile.
 ## Files
 
 ```
-package.json       manifest; dsh.bundle.patch is what makes this installable
-cordis.patch.yml   the Loader patch: inserts one @deepseek-ai/dsh-mcp-client row
+package.json       manifest; dsh.bundle.patch is what makes this installable,
+                   dsh.client is what mounts the browser half
+cordis.patch.yml   the Loader patch: one @deepseek-ai/dsh-mcp-client row, plus a
+                   self-referencing row for this package's browser half
+lib/index.js       host marker: an empty apply
+lib/client.js      the browser half; contributes the row's configuration page
 ```
+
+## Controlling the cold start from the UI
+
+`lib/client.js` contributes to `plugins.row.config` under the key
+`dsh-mcp-illustrator#mcp-illustrator`, which gives the `mcp-illustrator` row a
+**Configure** control on this bundle's Plugins page. `cordis.patch.yml`'s
+self-referencing row (`- id: mcp-illustrator-config`) is what mounts that browser half:
+`@deepseek-ai/dsh-client-modules` attaches a package's browser half to the Loader row
+whose specifier is the bare package name.
+
+**What is shipped right now is a probe, not the form.** It renders what the page owner
+actually hands a `plugins.row.config` occupant — whether `form` is present, its keys, and
+their shapes — and writes nothing. The documented owner props are
+`PluginConfigViewProps { view, form?: ConfigPageForm }`, where `ConfigPageForm` carries
+`form.state` and `form.mutate(operations, expectedRevision)`. That type is only ever
+*referenced* in the shipped client code, never defined in the packaged artifacts, so the
+`operations` shape is read off a live page rather than guessed: a wrong shape saves
+nothing while looking like it worked.
+
+Send back what the probe prints and it becomes a numeric **Normal timeout (ms)** field,
+pre-filled with the effective value, saved through `form.mutate`.
+
+**Overrides replace; they do not merge** — verified in the shipped code:
+
+- `applyEntryPatches` (`@deepseek-ai/dsh-app-boot/lib/index.js`) applies a non-`insert`
+  patch with `for (const [key, value] of Object.entries(overrides)) target[key] = value`,
+  so a patch's `config` replaces the entry's whole `config` object. `mergeConfig`,
+  `deepMerge` and `isPlainObject` appear zero times in that file.
+- `configEditor.edit` (`@deepseek-ai/dsh-config-editor/lib/index.js`) matches that model:
+  its callback gets `current` (the complete effective config) and `inherited`, and returns
+  the **complete** next config.
+
+So a saved value must round-trip the entire `config` — `serverName`, `transport`,
+`command`, `args`, `cwd`, `env`, `failOnStartupError`, `toolCallTimeoutMs` — not just the
+`env` key being edited. When the next config deep-equals the inherited one, the editor
+deletes the `config` key from the profile patch, which is what "reset to default" means.
 
 ## Credits
 
