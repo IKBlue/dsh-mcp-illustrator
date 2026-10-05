@@ -1,24 +1,50 @@
 # dsh-mcp-illustrator — bundle layer
 #
 # Mounted by the plugin manager (`install_bundle`), or by
-# `dsh plugin --profile <profile> add <spec>`.
+# `dsh plugin --profile <profile> add <spec>`, so a profile gets these rows.
 #
-# This bundle declares ONE row, and that row runs no server. It exists so the two Illustrator
-# cold-start budgets have a schema this bundle owns, because dsh-settings serves a settings namespace
-# — and therefore offers a configuration page — only for an entry whose schema declares a volatile
-# field (`x-cordis.volatile`; see lib/index.js).
+# Two rows, and they are one feature:
 #
-# The MCP client row itself is deliberately NOT declared here. It lives in the profile's own
-# cordis.patch.yml next to the profile's other MCP servers, so that this bundle's page lists only what
-# this bundle owns. Two consequences, both accepted on purpose:
+#   mcp-illustrator           `@deepseek-ai/dsh-mcp-client` aimed at illustrator-mcp-server. This is
+#                             DSH's own MCP client; the 66 `mcp__illustrator__*` tools are what it
+#                             registers. It is declared *here*, in the bundle, so installing the
+#                             bundle wires Illustrator and uninstalling it unwires — no hand-editing,
+#                             and no row left behind.
+#   mcp-illustrator-timeouts  this bundle's own row, and it runs no server. It exists so the two
+#                             budgets have a schema this bundle owns, because dsh-settings serves a
+#                             settings namespace — and therefore offers a configuration page — only
+#                             for an entry whose schema declares a volatile field
+#                             (`x-cordis.volatile`; see lib/index.js).
 #
-#   - installing this bundle does not wire Illustrator by itself; the profile row has to exist too
-#     (README, "The MCP client row lives in the profile")
-#   - uninstalling this bundle does not remove that row; delete it separately
+# Why `command` and `args` are `!!js` rather than literal paths: the profile directory *is* the
+# install directory and this bundle is resolved from it, so
+# `<profile>/node_modules/illustrator-mcp-server/...` is the server's location without writing an
+# absolute path down anywhere. See README, "Why there are no absolute paths".
 #
-# The two rows are one feature. The row below carries the budgets; lib/index.js publishes them into
-# the host environment and restarts the MCP row after a save, which is what makes a new budget apply.
+# The form is registered on `plugins.bundle.config`, keyed by this package name, so it renders on the
+# bundle's own page between the description and the rows. It is deliberately NOT registered per row as
+# well: the same form in two places is a nesting doll, not convenience.
+#
+# An earlier revision moved `mcp-illustrator` into the profile's own patch, so that this bundle's page
+# would list only what the bundle owns. That was reverted: it stopped installs and uninstalls from
+# being self-contained, and a reinstall then left Illustrator unwired with nothing on screen to say so.
 
 - insert:
+    - id: mcp-illustrator
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: illustrator
+        transport: stdio
+        command: !!js process.execPath
+        args:
+          - !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server/dist/index.js'
+        cwd: !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server'
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+          ILLUSTRATOR_MCP_TIMEOUT_NORMAL: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_NORMAL || 180000) + ''
+          ILLUSTRATOR_MCP_TIMEOUT_HEAVY: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_HEAVY || 180000) + ''
+        failOnStartupError: true
+        toolCallTimeoutMs: 300000
+
     - id: mcp-illustrator-timeouts
       name: 'dsh-mcp-illustrator'
