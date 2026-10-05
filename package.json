@@ -1,6 +1,6 @@
 {
   "name": "dsh-mcp-illustrator",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "private": true,
   "description": "DSH bundle: connects the illustrator-mcp-server MCP server (Adobe Illustrator) to the current Harness profile.",
   "type": "module",

@@ -21,6 +21,11 @@ The goal here is to move that from a hand-edited config to a **package**, so a
 machine that has never seen this repository gets a working server with one
 command and no path written down anywhere:
 
+> **Changed on purpose.** The MCP client row no longer lives in this bundle's patch — it lives in the
+> profile's, so that this bundle's page in the plugin manager lists only what this bundle owns. This
+> bundle now provides the configuration page's schema and the machinery behind it. See
+> "The MCP client row lives in the profile".
+
 ```
 plugin_manager install_bundle → https://github.com/IKBlue/dsh-mcp-illustrator.git
 ```
@@ -72,6 +77,11 @@ Then verify with the newly available tools — `mcp__illustrator__get_document_i
 ```
 plugin_manager({ action: "remove_bundle", ... })
 ```
+
+**This does not remove the MCP client row.** That row lives in the profile's own
+`cordis.patch.yml` (see "The MCP client row lives in the profile"), so uninstalling the bundle leaves
+it behind, pointing at a bundle that is no longer installed. Delete the `mcp-illustrator` block from
+the profile patch as well.
 
 ## Why there are no absolute paths
 
@@ -143,6 +153,49 @@ every restart request would be rejected.
 
 `volatile` is also why `lib/index.js` watches the two values on a timer: the Loader commits a
 volatile change into the running references *without* remounting, so there is no callback to hook.
+
+### The MCP client row lives in the profile
+
+`cordis.patch.yml` declares exactly one row, `mcp-illustrator-timeouts`, and that row runs no server.
+The row that actually launches `illustrator-mcp-server` — `mcp-illustrator`, `name:
+'@deepseek-ai/dsh-mcp-client'` — is declared by the **profile's own** `cordis.patch.yml`, next to the
+profile's other MCP servers.
+
+That split exists because the plugin manager's page lists every row a bundle's patch declares. A row
+declared by the bundle shows up under the bundle whether or not anyone wants to see it there, and the
+MCP client row is not something this bundle owns: it is DSH's own MCP client, pointed at a server.
+
+Two consequences, both taken deliberately:
+
+- installing this bundle alone no longer wires Illustrator — the profile must carry that row too
+- uninstalling this bundle does not remove it; delete the `mcp-illustrator` block from the profile
+  patch as well, or it stays behind pointing at nothing
+
+The two rows remain one feature. The row here carries the schema and the two budgets;
+`lib/index.js` publishes them into the host environment and restarts the MCP row after a save, which
+is what makes a new budget reach the server. It finds that row by patch id, so it does not care which
+layer declares it.
+
+The row itself, for a profile that needs it recreated (this is the whole block, `!!js` and all):
+
+```yaml
+- insert:
+    - id: mcp-illustrator
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: illustrator
+        transport: stdio
+        command: !!js process.execPath
+        args:
+          - !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server/dist/index.js'
+        cwd: !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server'
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+          ILLUSTRATOR_MCP_TIMEOUT_NORMAL: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_NORMAL || 180000) + ''
+          ILLUSTRATOR_MCP_TIMEOUT_HEAVY: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_HEAVY || 180000) + ''
+        failOnStartupError: true
+        toolCallTimeoutMs: 300000
+```
 
 ### Timeouts
 
@@ -271,8 +324,9 @@ per profile.
 ```
 package.json       manifest; dsh.bundle.patch is what makes this installable,
                    dsh.client.inject is the browser half's load graph
-cordis.patch.yml   the Loader patch: inserts the @deepseek-ai/dsh-mcp-client row
-                   and this bundle's own configurable row
+cordis.patch.yml   the Loader patch: inserts this bundle's own configurable row.
+                   The MCP client row is NOT here — it belongs to the profile,
+                   see "The MCP client row lives in the profile"
 lib/index.js       host half: the row's volatile Config schema, and the publisher
                    that puts each configured budget into the process environment
 lib/client.js      browser half: the configuration page, and the respawn of the

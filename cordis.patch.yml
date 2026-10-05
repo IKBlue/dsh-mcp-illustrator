@@ -1,68 +1,24 @@
 # dsh-mcp-illustrator — bundle layer
 #
 # Mounted by the plugin manager (`install_bundle`), or by
-# `dsh plugin --profile <profile> add <spec>`, so a profile gets these rows
-# without anyone hand-editing the profile's own cordis.patch.yml.
+# `dsh plugin --profile <profile> add <spec>`.
 #
-# There is deliberately NO absolute path anywhere in this file. Two things make
-# that work, and both matter on a machine that has never seen this repo:
+# This bundle declares ONE row, and that row runs no server. It exists so the two Illustrator
+# cold-start budgets have a schema this bundle owns, because dsh-settings serves a settings namespace
+# — and therefore offers a configuration page — only for an entry whose schema declares a volatile
+# field (`x-cordis.volatile`; see lib/index.js).
 #
-#   command: !!js process.execPath
-#     The Harness executable, run with ELECTRON_RUN_AS_NODE=1, *is* a Node
-#     interpreter. Verified: it reports node v24.18.1 and runs this server.
-#     So no "install Node on PATH" prerequisite, and no hard-coded node.exe.
+# The MCP client row itself is deliberately NOT declared here. It lives in the profile's own
+# cordis.patch.yml next to the profile's other MCP servers, so that this bundle's page lists only what
+# this bundle owns. Two consequences, both accepted on purpose:
 #
-#   args / cwd: !!js ctx.get('profileContext').dir + ...
-#     `ctx.profileContext` is the app-boot service carrying the profile's
-#     locations; `.dir` is its profile directory. The server is a declared
-#     dependency, so the profile that installed this bundle has it at
-#     <profile>/node_modules/illustrator-mcp-server (pnpm nodeLinker: hoisted).
+#   - installing this bundle does not wire Illustrator by itself; the profile row has to exist too
+#     (README, "The MCP client row lives in the profile")
+#   - uninstalling this bundle does not remove that row; delete it separately
 #
-#     Do NOT reach for process.env.DSH_PROFILE_DIR here. That variable is
-#     injected into *shell calls* by @deepseek-ai/dsh-shell-env; it is not in the
-#     host process environment. Reading it gives undefined, the expression still
-#     evaluates (undefined + '…' is a valid string), and the row then fails only
-#     at spawn with ENOENT — the bundle loads and the row mounts, but reports
-#     fiberPhase: failed. That is exactly how this file was wrong once.
-#
-# !!js scalars inside `config` are Loader expressions evaluated against the row
-# plugin's context, with global fallthrough (which is where `process` comes from).
-#
-# The two rows below are one feature: the first runs the server, the second holds
-# the two cold-start budgets. README, "The configuration page", explains why the
-# budgets cannot live on the first row and why saving has to remount it.
+# The two rows are one feature. The row below carries the budgets; lib/index.js publishes them into
+# the host environment and restarts the MCP row after a save, which is what makes a new budget apply.
 
 - insert:
-    - id: mcp-illustrator
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: illustrator
-        transport: stdio
-        command: !!js process.execPath
-        args:
-          - !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server/dist/index.js'
-        cwd: !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server'
-        env:
-          ELECTRON_RUN_AS_NODE: '1'
-          # The server reads both ONCE, at startup (module-level constants in
-          # dist/executor/jsx-runner.js), so a new budget needs this row mounted again;
-          # the timeouts row's host half does that after a save.
-          #
-          # 60000 is measured insufficient rather than guessed: cold-starting Illustrator,
-          # a NORMAL call (list_fonts) hit the 60s deadline while Illustrator 29 was still
-          # coming up. The cold-start duration itself was not measured, so 180000 is
-          # margin, not a measurement.
-          ILLUSTRATOR_MCP_TIMEOUT_NORMAL: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_NORMAL || 180000) + ''
-          # Kept below toolCallTimeoutMs (300000) on purpose: the inner timeout carries the
-          # actionable error, the outer one is generic.
-          ILLUSTRATOR_MCP_TIMEOUT_HEAVY: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_HEAVY || 180000) + ''
-        failOnStartupError: true
-        toolCallTimeoutMs: 300000
-
-    # This bundle's own row. It runs no server: it exists so the two budgets have a schema this
-    # bundle owns, because dsh-settings serves a namespace — and therefore offers a page — only
-    # for an entry whose schema declares a volatile field. It carries no config of its own: the
-    # 180000 defaults live in that schema, and "reset to default" deletes the user's override so
-    # they apply again. A second copy here would be a second owner for the same number.
     - id: mcp-illustrator-timeouts
       name: 'dsh-mcp-illustrator'
