@@ -42,9 +42,12 @@
           ELECTRON_RUN_AS_NODE: '1'
           # The server reads both of these ONCE, at server start (they are module-level
           # constants in dist/executor/jsx-runner.js), so a new value needs this row to be
-          # remounted.  Two things can remount it: restarting DSH, or the timeouts row's
-          # browser half, which disables and re-enables this row through the plugin manager
-          # after a save so the expressions below are re-evaluated.
+          # remounted.  Two things can remount it: restarting DSH, or the timeouts row's host
+          # half, which disables and re-enables this row through the plugin manager after a save
+          # so the expressions below are re-evaluated.  The host half must do it, not the browser
+          # half: a client plugin reaches pluginManager only through the remote gateway, which
+          # mounts the faces a client package declares for itself — from this bundle the call is
+          # accepted and never answered, which reads as a hang.
           #
           # 60000 is measured insufficient, not guessed at: when the server has to cold-start
           # Illustrator, a NORMAL call (list_fonts) hit the 60s deadline while Illustrator 29

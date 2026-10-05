@@ -1,6 +1,6 @@
 {
   "name": "dsh-mcp-illustrator",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "DSH bundle: connects the illustrator-mcp-server MCP server (Adobe Illustrator) to the current Harness profile.",
   "type": "module",
@@ -33,8 +33,7 @@
       "inject": [
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-plugin-manager",
-        "@deepseek-ai/dsh-api-remotes"
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ]
     }
   }

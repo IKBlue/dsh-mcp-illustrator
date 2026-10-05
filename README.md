@@ -117,14 +117,26 @@ failure mode first:
 |---|---|
 | `dsh.client.inject` in `package.json` lists `@deepseek-ai/dsh-client-ui-settings`, not `dsh-client-ui-primitives` | the browser half never loads. `primitives` is a pure React atom library with no `dsh.client` block, so it cannot be an injection edge; `ui-settings` is what *provides* the `ctx.configForms` service this page injects |
 | `normal` and `heavy` are declared `volatile()` in `lib/index.js` | the namespace is never served. `dsh-settings.describe()` drops every entry whose `volatileForm(schema)` is undefined, so `whileServed` never fires and the row shows no configuration at all |
-| the browser half respawns the MCP row after a save | the saved numbers never reach the server |
+| the host half respawns the MCP row after a save | the saved numbers never reach the server |
 
 **Saving restarts the Illustrator MCP server.** That is inherent, not incidental: the server reads
 `ILLUSTRATOR_MCP_TIMEOUT_*` exactly once, at startup, so a new budget can only apply by mounting the
-MCP row again. The page does that by disabling and re-enabling the row through the plugin manager
-(there is no "restart this row" call, and the manager ignores a request that does not change a row's
-state), then verifies the enable and retries it — stopping at a disabled row would cost all 66 tools.
-A save therefore interrupts any tool call in flight, and the next call may pay a cold start.
+MCP row again. The host half does that by disabling and re-enabling the row through the plugin
+manager (there is no "restart this row" call, and the manager ignores a request that does not change
+a row's state), then verifies the enable and retries it — stopping at a disabled row would cost all
+66 tools. A save therefore interrupts any tool call in flight, and the next call may pay a cold start.
+
+**Why the restart is the host half's job.** A client plugin reaches `pluginManager` only through the
+remote gateway, and that gateway mounts the package faces a client package declares for itself. From
+this bundle such a call is accepted and then never answered — the page hung on "restarting…" forever
+while the profile was never touched. The service is local to the host process, so the host half calls
+it directly.
+
+**Why the watcher escapes the Loader's transaction.** `hmr.executing` is an `AsyncLocalStorage`, and
+`hmr.runExclusive` rejects a caller already inside a transaction — which any callback created during
+this row's own reconcile is, for the rest of its life. The host half therefore creates its interval
+inside `hmr.executing.exit(...)`, the same escape DSH uses for its own config watcher. Without it
+every restart request would be rejected.
 
 `volatile` is also why `lib/index.js` watches the two values on a timer: the Loader commits a
 volatile change into the running references *without* remounting, so there is no callback to hook.
