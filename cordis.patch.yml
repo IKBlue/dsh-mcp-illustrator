@@ -56,15 +56,3 @@
           ILLUSTRATOR_MCP_TIMEOUT_HEAVY: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_HEAVY || 180000) + ''
         failOnStartupError: true
         toolCallTimeoutMs: 300000
-
-    # Self-referencing row: this package's own browser half attaches to the Loader row
-    # whose specifier is the bare package name (that is what @deepseek-ai/dsh-client-modules
-    # keys on).  Same shipped pattern as @deepseek-ai/dsh-experimental-auto-review, whose
-    # patch inserts a row naming its own package.
-    #
-    # This row runs no server.  It exists so the config page in lib/client.js is mounted;
-    # that page contributes to `plugins.row.config` under the key
-    # `dsh-mcp-illustrator#mcp-illustrator` — i.e. it configures the row above, from the
-    # Plugins page.
-    - id: mcp-illustrator-config
-      name: 'dsh-mcp-illustrator'
