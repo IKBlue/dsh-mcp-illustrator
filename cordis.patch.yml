@@ -57,19 +57,22 @@
         failOnStartupError: true
         toolCallTimeoutMs: 300000
 
-    # EXPERIMENT (0.1.4) — host-only self-row, no browser half.
+    # The row the configuration page configures.
     #
-    # Question: can a row whose module lives in the *profile's* node_modules be imported by
-    # the Loader?  The 0.2.0 attempt added a row for this package together with a
-    # `dsh.client` browser half and got:
+    # Settled by experiment, not by inference: a row whose module lives in the *profile's*
+    # node_modules does import — this entry reaches fibre phase `active` — so a third-party
+    # bundle can declare a host row of its own.  The earlier `failed to import` on
+    # `mcp-illustrator-config` came with `dsh.client.inject: []`; the working version lists
+    # the packages the browser half needs.  An empty inject list is therefore the suspect
+    # for that failure, and it is avoided here.
     #
-    #     include:mcp-illustrator-config (dsh-mcp-illustrator): failed to import
-    #
-    # while every row that does activate here names an application-internal
-    # `@deepseek-ai/*` package.  This row removes the browser half as a variable: if it
-    # activates, profile-local rows work and that failure belonged to the browser half; if
-    # it fails the same way, a third-party bundle cannot declare a host row of its own.
-    #
-    # Remove this row once the question is answered — it serves no other purpose.
+    # This row runs no server.  It exists so there is an entry whose Config schema carries
+    # the two timeout numbers, and so the browser half has a row to attach to.  `normal` /
+    # `heavy` below are the layer's defaults — the same shape `bash-sandbox` uses for its
+    # `timeoutMs: 60000` — and "reset to default" in the page means deleting the user
+    # override so these apply again.
     - id: mcp-illustrator-timeouts
       name: 'dsh-mcp-illustrator'
+      config:
+        normal: 180000
+        heavy: 180000
