@@ -61,10 +61,8 @@
 
     # This bundle's own row. It runs no server: it exists so the two budgets have a schema this
     # bundle owns, because dsh-settings serves a namespace — and therefore offers a page — only
-    # for an entry whose schema declares a volatile field. `normal`/`heavy` are the layer's
-    # defaults; "reset to default" in the page deletes the user override so these apply again.
+    # for an entry whose schema declares a volatile field. It carries no config of its own: the
+    # 180000 defaults live in that schema, and "reset to default" deletes the user's override so
+    # they apply again. A second copy here would be a second owner for the same number.
     - id: mcp-illustrator-timeouts
       name: 'dsh-mcp-illustrator'
-      config:
-        normal: 180000
-        heavy: 180000

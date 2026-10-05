@@ -119,6 +119,9 @@ failure mode first:
 | `normal` and `heavy` are declared `volatile()` in `lib/index.js` | the namespace is never served. `dsh-settings.describe()` drops every entry whose `volatileForm(schema)` is undefined, so `whileServed` never fires and the row shows no configuration at all |
 | the host half respawns the MCP row after a save | the saved numbers never reach the server |
 
+The row itself carries no config: the 180000 defaults live in that schema, so the page, the reset
+gesture and the server all read one number instead of three copies of it.
+
 **Saving restarts the Illustrator MCP server.** That is inherent, not incidental: the server reads
 `ILLUSTRATOR_MCP_TIMEOUT_*` exactly once, at startup, so a new budget can only apply by mounting the
 MCP row again. The host half does that by disabling and re-enabling the row through the plugin
