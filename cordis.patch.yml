@@ -1,7 +1,7 @@
 # dsh-mcp-illustrator — bundle layer
 #
 # Mounted by the plugin manager (`install_bundle`), or by
-# `dsh plugin --profile <profile> add <spec>`, so a profile gets this row
+# `dsh plugin --profile <profile> add <spec>`, so a profile gets these rows
 # without anyone hand-editing the profile's own cordis.patch.yml.
 #
 # There is deliberately NO absolute path anywhere in this file. Two things make
@@ -27,6 +27,10 @@
 #
 # !!js scalars inside `config` are Loader expressions evaluated against the row
 # plugin's context, with global fallthrough (which is where `process` comes from).
+#
+# The two rows below are one feature: the first runs the server, the second holds
+# the two cold-start budgets. README, "The configuration page", explains why the
+# budgets cannot live on the first row and why saving has to remount it.
 
 - insert:
     - id: mcp-illustrator
@@ -40,24 +44,14 @@
         cwd: !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server'
         env:
           ELECTRON_RUN_AS_NODE: '1'
-          # The server reads both of these ONCE, at server start (they are module-level
-          # constants in dist/executor/jsx-runner.js), so a new value needs this row to be
-          # remounted.  Two things can remount it: restarting DSH, or the timeouts row's host
-          # half, which disables and re-enables this row through the plugin manager after a save
-          # so the expressions below are re-evaluated.  The host half must do it, not the browser
-          # half: a client plugin reaches pluginManager only through the remote gateway, which
-          # mounts the faces a client package declares for itself — from this bundle the call is
-          # accepted and never answered, which reads as a hang.
+          # The server reads both ONCE, at startup (module-level constants in
+          # dist/executor/jsx-runner.js), so a new budget needs this row mounted again;
+          # the timeouts row's host half does that after a save.
           #
-          # 60000 is measured insufficient, not guessed at: when the server has to cold-start
-          # Illustrator, a NORMAL call (list_fonts) hit the 60s deadline while Illustrator 29
-          # was still coming up. The cold-start duration itself was not measured, so 180000 is
+          # 60000 is measured insufficient rather than guessed: cold-starting Illustrator,
+          # a NORMAL call (list_fonts) hit the 60s deadline while Illustrator 29 was still
+          # coming up. The cold-start duration itself was not measured, so 180000 is
           # margin, not a measurement.
-          #
-          # The fallback is the host process environment, which lib/index.js publishes the
-          # configured budgets into — but only while a budget differs from the default below,
-          # so `setx ILLUSTRATOR_MCP_TIMEOUT_NORMAL 240000` still works for anyone who never
-          # opens the configuration page.
           ILLUSTRATOR_MCP_TIMEOUT_NORMAL: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_NORMAL || 180000) + ''
           # Kept below toolCallTimeoutMs (300000) on purpose: the inner timeout carries the
           # actionable error, the outer one is generic.
@@ -65,27 +59,10 @@
         failOnStartupError: true
         toolCallTimeoutMs: 300000
 
-    # The row the configuration page configures.
-    #
-    # Settled by experiment, not by inference: a row whose module lives in the *profile's*
-    # node_modules does import — this entry reaches fibre phase `active` — so a third-party
-    # bundle can declare a host row of its own.  The earlier `failed to import` on
-    # `mcp-illustrator-config` came with `dsh.client.inject: []`; the working version lists
-    # the packages the browser half needs.  An empty inject list is therefore the suspect
-    # for that failure, and it is avoided here.
-    #
-    # This row runs no server.  It exists so there is an entry whose Config schema carries
-    # the two timeout numbers, and so the browser half has a row to attach to.  `normal` /
-    # `heavy` below are the layer's defaults, and "reset to default" in the page means
-    # deleting the user override so these apply again.
-    #
-    # The two fields are declared `volatile()` in lib/index.js, and that is load-bearing
-    # rather than stylistic.  dsh-settings serves a namespace only for entries whose schema
-    # declares a volatile field (`describe()` drops the rest), so without it the namespace
-    # is never served, the page's `whileServed` gate never fires, and this row shows no
-    # configuration at all — which is what 0.2.1 did.  Volatility also means the Loader
-    # commits a save into the running references WITHOUT remounting this row, which is why
-    # lib/index.js watches those references on a timer instead of reacting to a callback.
+    # This bundle's own row. It runs no server: it exists so the two budgets have a schema this
+    # bundle owns, because dsh-settings serves a namespace — and therefore offers a page — only
+    # for an entry whose schema declares a volatile field. `normal`/`heavy` are the layer's
+    # defaults; "reset to default" in the page deletes the user override so these apply again.
     - id: mcp-illustrator-timeouts
       name: 'dsh-mcp-illustrator'
       config:

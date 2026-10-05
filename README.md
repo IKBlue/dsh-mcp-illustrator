@@ -141,7 +141,7 @@ every restart request would be rejected.
 `volatile` is also why `lib/index.js` watches the two values on a timer: the Loader commits a
 volatile change into the running references *without* remounting, so there is no callback to hook.
 
-### Timeouts, and the two routes that set them
+### Timeouts
 
 The server takes two timeouts from its own environment, and **reads them once, at
 server start** — both are module-level constants in
@@ -153,17 +153,10 @@ remounted, i.e. the server process respawned.
 | `ILLUSTRATOR_MCP_TIMEOUT_NORMAL` | every call that does not opt into heavy | 30000 | **180000** |
 | `ILLUSTRATOR_MCP_TIMEOUT_HEAVY` | `export`, `export_pdf`, `preflight_check`, plus whatever `tool-executor` routes there | 60000 | 180000 |
 
-- **The page** (recommended). `lib/index.js` publishes each configured budget into the host process
-  environment, and the page respawns the MCP row so the `!!js` expressions are re-evaluated.
-- **The host environment**, for a budget you never configure on the page:
-
-```powershell
-setx ILLUSTRATOR_MCP_TIMEOUT_NORMAL 240000   # applies to the next Harness launch
-```
-
-That fallback is deliberately conditional: a budget is published only while it differs from the
-180000 default, so a `setx` value still wins as long as the page is left alone. Set the page to
-240000 and the page wins; set it back to 180000 and control returns to `setx`.
+**The page is the only owner of these two numbers.** `lib/index.js` publishes whatever the page
+holds into the host process environment on every change, defaults included, so what the page shows
+is what the server is given. There is deliberately no `setx` fallback for these two keys: a second
+source would mean two owners for one number and a rule about which wins that nobody would remember.
 
 Two properties of the server worth knowing before tuning:
 
