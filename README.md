@@ -107,7 +107,29 @@ lands at `<profile>/node_modules/illustrator-mcp-server`. If a profile ever
 nests it, the path becomes
 `<profile>/node_modules/dsh-mcp-illustrator/node_modules/illustrator-mcp-server/dist/index.js`.
 
-### Timeouts are the host environment's to set
+### The configuration page, and why it needs a `volatile` field
+
+The Illustrator row on the Plugins page carries a form with the two cold-start budgets, the same
+shape the shell executor's 终端 page uses. Three separate facts make it work, and each one was a
+failure mode first:
+
+| Fact | What breaks without it |
+|---|---|
+| `dsh.client.inject` in `package.json` lists `@deepseek-ai/dsh-client-ui-settings`, not `dsh-client-ui-primitives` | the browser half never loads. `primitives` is a pure React atom library with no `dsh.client` block, so it cannot be an injection edge; `ui-settings` is what *provides* the `ctx.configForms` service this page injects |
+| `normal` and `heavy` are declared `volatile()` in `lib/index.js` | the namespace is never served. `dsh-settings.describe()` drops every entry whose `volatileForm(schema)` is undefined, so `whileServed` never fires and the row shows no configuration at all |
+| the browser half respawns the MCP row after a save | the saved numbers never reach the server |
+
+**Saving restarts the Illustrator MCP server.** That is inherent, not incidental: the server reads
+`ILLUSTRATOR_MCP_TIMEOUT_*` exactly once, at startup, so a new budget can only apply by mounting the
+MCP row again. The page does that by disabling and re-enabling the row through the plugin manager
+(there is no "restart this row" call, and the manager ignores a request that does not change a row's
+state), then verifies the enable and retries it — stopping at a disabled row would cost all 66 tools.
+A save therefore interrupts any tool call in flight, and the next call may pay a cold start.
+
+`volatile` is also why `lib/index.js` watches the two values on a timer: the Loader commits a
+volatile change into the running references *without* remounting, so there is no callback to hook.
+
+### Timeouts, and the two routes that set them
 
 The server takes two timeouts from its own environment, and **reads them once, at
 server start** — both are module-level constants in
@@ -119,18 +141,24 @@ remounted, i.e. the server process respawned.
 | `ILLUSTRATOR_MCP_TIMEOUT_NORMAL` | every call that does not opt into heavy | 30000 | **180000** |
 | `ILLUSTRATOR_MCP_TIMEOUT_HEAVY` | `export`, `export_pdf`, `preflight_check`, plus whatever `tool-executor` routes there | 60000 | 180000 |
 
-Both are declared here as `!!js` expressions that fall back to the **host process
-environment**, so they can be changed without editing this file:
+- **The page** (recommended). `lib/index.js` publishes each configured budget into the host process
+  environment, and the page respawns the MCP row so the `!!js` expressions are re-evaluated.
+- **The host environment**, for a budget you never configure on the page:
 
 ```powershell
 setx ILLUSTRATOR_MCP_TIMEOUT_NORMAL 240000   # applies to the next Harness launch
 ```
 
+That fallback is deliberately conditional: a budget is published only while it differs from the
+180000 default, so a `setx` value still wins as long as the page is left alone. Set the page to
+240000 and the page wins; set it back to 180000 and control returns to `setx`.
+
 Two properties of the server worth knowing before tuning:
 
 - It accepts only a positive decimal integer (`/^\d+$/`). **Anything else silently
   falls back to the server default of 30000 — lower than this bundle's value.** A
-  malformed value makes things worse, not better.
+  malformed value makes things worse, not better. The page rejects a non-finite draft
+  rather than saving it.
 - `HEAVY` is deliberately kept below the row's `toolCallTimeoutMs` (300000): when
   the inner timeout wins you get the server's actionable "script execution timed
   out" message, which names the variables; when the outer one wins you get a
@@ -215,9 +243,8 @@ exclusively by the Electron application").
 - **Illustrator is launched by the server when it is not already running.** The
   first call after a cold start can therefore hit the inner timeout while
   Illustrator is still starting up — measured: a NORMAL call timed out at 60000ms
-  with Illustrator 29. Start Illustrator first, or raise
-  `ILLUSTRATOR_MCP_TIMEOUT_NORMAL` (see "Timeouts are the host environment's to
-  set" above).
+  with Illustrator 29. Start Illustrator first, or raise the normal budget on the
+  configuration page (see "The configuration page" above).
 - Network access to an npm registry on the machine that installs the bundle
   (the server is fetched as a dependency).
 
@@ -234,8 +261,14 @@ per profile.
 ## Files
 
 ```
-package.json       manifest; dsh.bundle.patch is what makes this installable
-cordis.patch.yml   the Loader patch: inserts one @deepseek-ai/dsh-mcp-client row
+package.json       manifest; dsh.bundle.patch is what makes this installable,
+                   dsh.client.inject is the browser half's load graph
+cordis.patch.yml   the Loader patch: inserts the @deepseek-ai/dsh-mcp-client row
+                   and this bundle's own configurable row
+lib/index.js       host half: the row's volatile Config schema, and the publisher
+                   that puts each configured budget into the process environment
+lib/client.js      browser half: the configuration page, and the respawn of the
+                   MCP row that makes a saved budget reach the server
 ```
 
 ## Credits
