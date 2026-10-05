@@ -21,11 +21,6 @@ The goal here is to move that from a hand-edited config to a **package**, so a
 machine that has never seen this repository gets a working server with one
 command and no path written down anywhere:
 
-> **Changed on purpose.** The MCP client row no longer lives in this bundle's patch — it lives in the
-> profile's, so that this bundle's page in the plugin manager lists only what this bundle owns. This
-> bundle now provides the configuration page's schema and the machinery behind it. See
-> "The MCP client row lives in the profile".
-
 ```
 plugin_manager install_bundle → https://github.com/IKBlue/dsh-mcp-illustrator.git
 ```
@@ -78,10 +73,8 @@ Then verify with the newly available tools — `mcp__illustrator__get_document_i
 plugin_manager({ action: "remove_bundle", ... })
 ```
 
-**This does not remove the MCP client row.** That row lives in the profile's own
-`cordis.patch.yml` (see "The MCP client row lives in the profile"), so uninstalling the bundle leaves
-it behind, pointing at a bundle that is no longer installed. Delete the `mcp-illustrator` block from
-the profile patch as well.
+Uninstalling takes the row with it. That is exactly why the row is declared by this bundle's patch and
+not by the profile's: install wires Illustrator, uninstall unwires it, and nothing is left behind.
 
 ## Why there are no absolute paths
 
@@ -117,85 +110,37 @@ lands at `<profile>/node_modules/illustrator-mcp-server`. If a profile ever
 nests it, the path becomes
 `<profile>/node_modules/dsh-mcp-illustrator/node_modules/illustrator-mcp-server/dist/index.js`.
 
-### The configuration page, and why it needs a `volatile` field
+### There is no settings page — and why
 
-The Illustrator row on the Plugins page carries a form with the two cold-start budgets, the same
-shape the shell executor's 终端 page uses. Three separate facts make it work, and each one was a
-failure mode first:
-
-| Fact | What breaks without it |
-|---|---|
-| `dsh.client.inject` in `package.json` lists `@deepseek-ai/dsh-client-ui-settings`, not `dsh-client-ui-primitives` | the browser half never loads. `primitives` is a pure React atom library with no `dsh.client` block, so it cannot be an injection edge; `ui-settings` is what *provides* the `ctx.configForms` service this page injects |
-| `normal` and `heavy` are declared `volatile()` in `lib/index.js` | the namespace is never served. `dsh-settings.describe()` drops every entry whose `volatileForm(schema)` is undefined, so `whileServed` never fires and the row shows no configuration at all |
-| the host half respawns the MCP row after a save | the saved numbers never reach the server |
-
-The row itself carries no config: the 180000 defaults live in that schema, so the page, the reset
-gesture and the server all read one number instead of three copies of it.
-
-**Saving restarts the Illustrator MCP server.** That is inherent, not incidental: the server reads
-`ILLUSTRATOR_MCP_TIMEOUT_*` exactly once, at startup, so a new budget can only apply by mounting the
-MCP row again. The host half does that by disabling and re-enabling the row through the plugin
-manager (there is no "restart this row" call, and the manager ignores a request that does not change
-a row's state), then verifies the enable and retries it — stopping at a disabled row would cost all
-66 tools. A save therefore interrupts any tool call in flight, and the next call may pay a cold start.
-
-**Why the restart is the host half's job.** A client plugin reaches `pluginManager` only through the
-remote gateway, and that gateway mounts the package faces a client package declares for itself. From
-this bundle such a call is accepted and then never answered — the page hung on "restarting…" forever
-while the profile was never touched. The service is local to the host process, so the host half calls
-it directly.
-
-**Why the watcher escapes the Loader's transaction.** `hmr.executing` is an `AsyncLocalStorage`, and
-`hmr.runExclusive` rejects a caller already inside a transaction — which any callback created during
-this row's own reconcile is, for the rest of its life. The host half therefore creates its interval
-inside `hmr.executing.exit(...)`, the same escape DSH uses for its own config watcher. Without it
-every restart request would be rejected.
-
-`volatile` is also why `lib/index.js` watches the two values on a timer: the Loader commits a
-volatile change into the running references *without* remounting, so there is no callback to hook.
-
-### The MCP client row lives in the profile
-
-`cordis.patch.yml` declares exactly one row, `mcp-illustrator-timeouts`, and that row runs no server.
-The row that actually launches `illustrator-mcp-server` — `mcp-illustrator`, `name:
-'@deepseek-ai/dsh-mcp-client'` — is declared by the **profile's own** `cordis.patch.yml`, next to the
-profile's other MCP servers.
-
-That split exists because the plugin manager's page lists every row a bundle's patch declares. A row
-declared by the bundle shows up under the bundle whether or not anyone wants to see it there, and the
-MCP client row is not something this bundle owns: it is DSH's own MCP client, pointed at a server.
-
-Two consequences, both taken deliberately:
-
-- installing this bundle alone no longer wires Illustrator — the profile must carry that row too
-- uninstalling this bundle does not remove it; delete the `mcp-illustrator` block from the profile
-  patch as well, or it stays behind pointing at nothing
-
-The two rows remain one feature. The row here carries the schema and the two budgets;
-`lib/index.js` publishes them into the host environment and restarts the MCP row after a save, which
-is what makes a new budget reach the server. It finds that row by patch id, so it does not care which
-layer declares it.
-
-The row itself, for a profile that needs it recreated (this is the whole block, `!!js` and all):
+The two budgets are constants of `cordis.patch.yml`:
 
 ```yaml
-- insert:
-    - id: mcp-illustrator
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: illustrator
-        transport: stdio
-        command: !!js process.execPath
-        args:
-          - !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server/dist/index.js'
-        cwd: !!js ctx.get('profileContext').dir + '/node_modules/illustrator-mcp-server'
-        env:
-          ELECTRON_RUN_AS_NODE: '1'
-          ILLUSTRATOR_MCP_TIMEOUT_NORMAL: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_NORMAL || 180000) + ''
-          ILLUSTRATOR_MCP_TIMEOUT_HEAVY: !!js (process.env.ILLUSTRATOR_MCP_TIMEOUT_HEAVY || 180000) + ''
-        failOnStartupError: true
-        toolCallTimeoutMs: 300000
+ILLUSTRATOR_MCP_TIMEOUT_NORMAL: '180000'
+ILLUSTRATOR_MCP_TIMEOUT_HEAVY: '180000'
 ```
+
+0.2.x and 0.3.x had a page, and it cost more than it was worth:
+
+- `dsh-settings.describe()` serves a namespace — and therefore offers a page — only for an entry whose
+  schema declares a volatile field, and this row's schema belongs to `@deepseek-ai/dsh-mcp-client`.
+  So the page needed a **second row of our own** (`mcp-illustrator-timeouts`) purely to carry a
+  schema, and the plugin manager then listed that row as a second component of this bundle.
+- It also needed a host half to publish saved values into the environment and to restart the MCP row,
+  because the server reads `ILLUSTRATOR_MCP_TIMEOUT_*` exactly once at startup — a new budget can only
+  apply by respawning it — and a browser half to draw the form.
+
+0.4.0 removed all of it: `lib/`, the `dsh.client` block, and the second row. One row, one file, and
+the numbers next to the server they configure. To change a budget, edit the patch and reinstall, or
+edit the installed copy at `<profile>/node_modules/dsh-mcp-illustrator/cordis.patch.yml` and restart
+DSH.
+
+Two facts from that excursion are worth keeping in mind if a page is ever added back. A client plugin
+reaches `pluginManager` only through the remote gateway, and that gateway mounts the package faces a
+client package declares for itself — from a bundle like this, such a call is accepted and then never
+answered (the page hung on "restarting…" while the profile was never touched), so the restart has to
+be the host half's job. And `hmr.runExclusive` rejects a caller already inside a transaction, which a
+callback created during this row's own reconcile always is; the host half had to create its interval
+inside `hmr.executing.exit(...)`, the same escape DSH uses for its own config watcher.
 
 ### Timeouts
 
@@ -209,17 +154,17 @@ remounted, i.e. the server process respawned.
 | `ILLUSTRATOR_MCP_TIMEOUT_NORMAL` | every call that does not opt into heavy | 30000 | **180000** |
 | `ILLUSTRATOR_MCP_TIMEOUT_HEAVY` | `export`, `export_pdf`, `preflight_check`, plus whatever `tool-executor` routes there | 60000 | 180000 |
 
-**The page is the only owner of these two numbers.** `lib/index.js` publishes whatever the page
-holds into the host process environment on every change, defaults included, so what the page shows
-is what the server is given. There is deliberately no `setx` fallback for these two keys: a second
-source would mean two owners for one number and a rule about which wins that nobody would remember.
+**`cordis.patch.yml` is the only owner of these two numbers.** What it holds is what the server is
+given: there is deliberately no second source (no page, no `setx` fallback) and therefore no rule
+about which one wins. Changing a budget means editing the patch and reinstalling, or editing the
+installed copy at `<profile>/node_modules/dsh-mcp-illustrator/cordis.patch.yml` and restarting DSH.
 
 Two properties of the server worth knowing before tuning:
 
 - It accepts only a positive decimal integer (`/^\d+$/`). **Anything else silently
   falls back to the server default of 30000 — lower than this bundle's value.** A
-  malformed value makes things worse, not better. The page rejects a non-finite draft
-  rather than saving it.
+  malformed value makes things worse, not better; keep the value in the patch a quoted
+  positive decimal integer.
 - `HEAVY` is deliberately kept below the row's `toolCallTimeoutMs` (300000): when
   the inner timeout wins you get the server's actionable "script execution timed
   out" message, which names the variables; when the outer one wins you get a
@@ -304,8 +249,8 @@ exclusively by the Electron application").
 - **Illustrator is launched by the server when it is not already running.** The
   first call after a cold start can therefore hit the inner timeout while
   Illustrator is still starting up — measured: a NORMAL call timed out at 60000ms
-  with Illustrator 29. Start Illustrator first, or raise the normal budget on the
-  configuration page (see "The configuration page" above).
+  with Illustrator 29. Start Illustrator first, or raise `ILLUSTRATOR_MCP_TIMEOUT_NORMAL`
+  in `cordis.patch.yml` (this bundle already ships 180000).
 - Network access to an npm registry on the machine that installs the bundle
   (the server is fetched as a dependency).
 
@@ -322,15 +267,9 @@ per profile.
 ## Files
 
 ```
-package.json       manifest; dsh.bundle.patch is what makes this installable,
-                   dsh.client.inject is the browser half's load graph
-cordis.patch.yml   the Loader patch: inserts this bundle's own configurable row.
-                   The MCP client row is NOT here — it belongs to the profile,
-                   see "The MCP client row lives in the profile"
-lib/index.js       host half: the row's volatile Config schema, and the publisher
-                   that puts each configured budget into the process environment
-lib/client.js      browser half: the configuration page, and the respawn of the
-                   MCP row that makes a saved budget reach the server
+package.json       manifest; dsh.bundle.patch is what makes this installable
+cordis.patch.yml   the Loader patch: inserts the one row — DSH's MCP client aimed
+                   at illustrator-mcp-server. The two budgets are constants here
 ```
 
 ## Credits
